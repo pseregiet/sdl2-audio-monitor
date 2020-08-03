@@ -113,7 +113,8 @@ static pa_operation * (*PULSEAUDIO_pa_stream_flush) (pa_stream *,
     pa_stream_success_cb_t, void *);
 static int (*PULSEAUDIO_pa_stream_disconnect) (pa_stream *);
 static void (*PULSEAUDIO_pa_stream_unref) (pa_stream *);
-
+static pa_operation * (*PULSEAUDIO_pa_context_get_server_info) (pa_context *, pa_server_info_cb_t, void *);
+static pa_operation * (*PULSEAUDIO_pa_context_get_sink_info_by_name) (pa_context *, const char*, pa_sink_info_cb_t, void*);
 static int load_pulseaudio_syms(void);
 
 
@@ -224,6 +225,8 @@ load_pulseaudio_syms(void)
     SDL_PULSEAUDIO_SYM(pa_stream_unref);
     SDL_PULSEAUDIO_SYM(pa_channel_map_init_auto);
     SDL_PULSEAUDIO_SYM(pa_strerror);
+    SDL_PULSEAUDIO_SYM(pa_context_get_server_info);
+    SDL_PULSEAUDIO_SYM(pa_context_get_sink_info_by_name);
     return 0;
 }
 
@@ -628,9 +631,9 @@ PULSEAUDIO_OpenDevice(_THIS, void *handle, const char *devname, int iscapture)
 
     /* now that we have multi-device support, don't move a stream from
         a device that was unplugged to something else, unless we're default. */
-    if (h->device_name != NULL) {
-        flags |= PA_STREAM_DONT_MOVE;
-    }
+    //if (h->device_name != NULL) {
+    //    flags |= PA_STREAM_DONT_MOVE;
+    //}
 
     if (iscapture) {
         rc = PULSEAUDIO_pa_stream_connect_record(h->stream, h->device_name, &paattr, flags);
@@ -703,6 +706,18 @@ HotplugCallback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, voi
     }
 }
 
+/* Get server info from pulse audio to find out the default device */
+char *default_sink = 0;
+
+static void
+ServerInfoCallback(pa_context *c, const pa_server_info *i, void *userdata)
+{
+    default_sink = SDL_strdup(i->default_sink_name);
+    printf("%s\n", default_sink);
+    //SDL_AddAudioDevice(SDL_TRUE, default_source, 0);
+    //SDL_AddAudioDevice(SDL_FALSE, default_sink, 0);
+}
+
 /* this runs as a thread while the Pulse target is initialized to catch hotplug events. */
 static int SDLCALL
 HotplugThread(void *data)
@@ -719,9 +734,10 @@ HotplugThread(void *data)
 static void
 PULSEAUDIO_DetectDevices()
 {
+    WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_server_info(hotplug_context, ServerInfoCallback, NULL));
+    WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_sink_info_by_name(hotplug_context, default_sink, SinkInfoCallback, NULL));
     WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_sink_info_list(hotplug_context, SinkInfoCallback, NULL));
     WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_source_info_list(hotplug_context, SourceInfoCallback, NULL));
-
     /* ok, we have a sane list, let's set up hotplug notifications now... */
     hotplug_thread = SDL_CreateThreadInternal(HotplugThread, "PulseHotplug", 256 * 1024, NULL);
 }
