@@ -689,17 +689,19 @@ HotplugCallback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, voi
 {
     const SDL_bool added = ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_NEW);
     const SDL_bool removed = ((t & PA_SUBSCRIPTION_EVENT_TYPE_MASK) == PA_SUBSCRIPTION_EVENT_REMOVE);
-
     if (added || removed) {  /* we only care about add/remove events. */
         const SDL_bool sink = ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK);
         const SDL_bool source = ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SOURCE);
+        const SDL_bool sinki = ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK_INPUT);
 
         /* adds need sink details from the PulseAudio server. Another callback... */
         if (added && sink) {
             PULSEAUDIO_pa_context_get_sink_info_by_index(hotplug_context, idx, SinkInfoCallback, NULL);
+        } else if (added && sinki) {
+            PULSEAUDIO_pa_context_get_sink_info_by_index(hotplug_context, idx, SinkInfoCallback, NULL);
         } else if (added && source) {
             PULSEAUDIO_pa_context_get_source_info_by_index(hotplug_context, idx, SourceInfoCallback, NULL);
-        } else if (removed && (sink || source)) {
+        } else if (removed && (sink || source || sinki)) {
             /* removes we can handle just with the device index. */
             SDL_RemoveAudioDevice(source != 0, (void *) ((size_t) idx+1));
         }
@@ -713,9 +715,6 @@ static void
 ServerInfoCallback(pa_context *c, const pa_server_info *i, void *userdata)
 {
     default_sink = SDL_strdup(i->default_sink_name);
-    printf("%s\n", default_sink);
-    //SDL_AddAudioDevice(SDL_TRUE, default_source, 0);
-    //SDL_AddAudioDevice(SDL_FALSE, default_sink, 0);
 }
 
 /* this runs as a thread while the Pulse target is initialized to catch hotplug events. */
@@ -725,7 +724,11 @@ HotplugThread(void *data)
     pa_operation *o;
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
     PULSEAUDIO_pa_context_set_subscribe_callback(hotplug_context, HotplugCallback, NULL);
-    o = PULSEAUDIO_pa_context_subscribe(hotplug_context, PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SOURCE, NULL, NULL);
+    o = PULSEAUDIO_pa_context_subscribe(hotplug_context,
+            (PA_SUBSCRIPTION_MASK_SINK | 
+             PA_SUBSCRIPTION_MASK_SOURCE | 
+             PA_SUBSCRIPTION_MASK_SINK_INPUT),
+    NULL, NULL);
     PULSEAUDIO_pa_operation_unref(o);  /* don't wait for it, just do our thing. */
     PULSEAUDIO_pa_mainloop_run(hotplug_mainloop, NULL);
     return 0;

@@ -377,6 +377,7 @@ add_audio_device(const char *name, void *handle, SDL_AudioDeviceItem **devices, 
     SDL_AudioDeviceItem *item;
     const SDL_AudioDeviceItem *i;
     int dupenum = 0;
+    int fakedup = 0;
 
     SDL_assert(handle != NULL);  /* we reserve NULL, audio backends can't use it. */
     SDL_assert(name != NULL);
@@ -398,11 +399,20 @@ add_audio_device(const char *name, void *handle, SDL_AudioDeviceItem **devices, 
 
     SDL_LockMutex(current_audio.detectionLock);
 
+
     for (i = *devices; i != NULL; i = i->next) {
         if (SDL_strcmp(name, i->original_name) == 0) {
             dupenum = i->dupenum + 1;
+            /* check if handle is the same, if so, ignore this add */
+            fakedup = (handle == i->handle);
             break;  /* stop at the highest-numbered dupe. */
         }
+    }
+
+    if (fakedup) {
+        SDL_free(item);
+        SDL_UnlockMutex(current_audio.detectionLock);
+        return *devCount;
     }
 
     if (dupenum) {
