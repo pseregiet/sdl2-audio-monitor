@@ -210,6 +210,12 @@ get_audio_device(SDL_AudioDeviceID id)
 
 
 /* stubs for audio drivers that don't need a specific entry point... */
+static char*
+SDL_AudioGetDefault_Default(void)
+{                               /* no-op. */
+    return 0;
+}
+
 static void
 SDL_AudioDetectDevices_Default(void)
 {
@@ -348,6 +354,7 @@ finish_audio_entry_points_init(void)
         if (current_audio.impl.x == NULL) { \
             current_audio.impl.x = SDL_Audio##x##_Default; \
         }
+    FILL_STUB(GetDefault);
     FILL_STUB(DetectDevices);
     FILL_STUB(OpenDevice);
     FILL_STUB(ThreadInit);
@@ -1089,6 +1096,10 @@ SDL_GetAudioDeviceName(int index, int iscapture)
     if (iscapture && !current_audio.impl.HasCaptureSupport) {
         SDL_SetError("No capture support");
         return NULL;
+    }
+
+    if (index == -1) {
+       return current_audio.impl.GetDefault();
     }
 
     if (index >= 0) {

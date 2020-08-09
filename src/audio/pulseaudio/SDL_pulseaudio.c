@@ -266,6 +266,19 @@ WaitForPulseOperation(pa_mainloop *mainloop, pa_operation *o)
 }
 
 static void
+WaitForPulseOperation_def(pa_mainloop *mainloop, pa_operation *o)
+{
+    /* This checks for NO errors currently. Either fix that, check results elsewhere, or do things you don't care about. */
+    if (mainloop && o) {
+        SDL_bool okay = SDL_TRUE;
+        while (okay && (PULSEAUDIO_pa_operation_get_state(o) == PA_OPERATION_RUNNING)) {
+            SDL_Delay(50);
+        }
+        PULSEAUDIO_pa_operation_unref(o);
+    }
+}
+
+static void
 DisconnectFromPulseServer(pa_mainloop *mainloop, pa_context *context)
 {
     if (context) {
@@ -709,12 +722,21 @@ HotplugCallback(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, voi
 }
 
 /* Get server info from pulse audio to find out the default device */
-char *default_sink = 0;
-
 static void
 ServerInfoCallback(pa_context *c, const pa_server_info *i, void *userdata)
 {
-    default_sink = SDL_strdup(i->default_sink_name);
+    char **default_sink = (char **)userdata;
+    *default_sink = SDL_strdup(i->default_sink_name);
+    //printf("default_sink : %s\n", *default_sink);
+}
+
+static void
+SinkInfoCallback_def(pa_context *c, const pa_sink_info *i, int is_last, void *data)
+{
+    char **devname = (char **)data;
+    if (i) {
+        *devname = SDL_strdup(i->description);
+    }
 }
 
 /* this runs as a thread while the Pulse target is initialized to catch hotplug events. */
@@ -734,16 +756,26 @@ HotplugThread(void *data)
     return 0;
 }
 
+static char*
+PULSEAUDIO_GetDefault()
+{
+    char *default_sink = 0;
+    char *default_final_name = 0;
+    WaitForPulseOperation_def(hotplug_mainloop, PULSEAUDIO_pa_context_get_server_info(hotplug_context, ServerInfoCallback, &default_sink));
+    WaitForPulseOperation_def(hotplug_mainloop, PULSEAUDIO_pa_context_get_sink_info_by_name(hotplug_context, default_sink, SinkInfoCallback_def, &default_final_name));
+    if (default_sink) {
+        free(default_sink);
+    }
+    return default_final_name;
+}
+
 static void
 PULSEAUDIO_DetectDevices()
 {
-    WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_server_info(hotplug_context, ServerInfoCallback, NULL));
-    WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_sink_info_by_name(hotplug_context, default_sink, SinkInfoCallback, NULL));
     WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_sink_info_list(hotplug_context, SinkInfoCallback, NULL));
     WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_source_info_list(hotplug_context, SourceInfoCallback, NULL));
     /* ok, we have a sane list, let's set up hotplug notifications now... */
     hotplug_thread = SDL_CreateThreadInternal(HotplugThread, "PulseHotplug", 256 * 1024, NULL);
-    free(default_sink);
 }
 
 static void
@@ -775,6 +807,7 @@ PULSEAUDIO_Init(SDL_AudioDriverImpl * impl)
     }
 
     /* Set the function pointers */
+    impl->GetDefault = PULSEAUDIO_GetDefault;
     impl->DetectDevices = PULSEAUDIO_DetectDevices;
     impl->OpenDevice = PULSEAUDIO_OpenDevice;
     impl->PlayDevice = PULSEAUDIO_PlayDevice;

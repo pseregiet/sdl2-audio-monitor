@@ -64,6 +64,7 @@ extern void SDL_OpenedAudioDeviceDisconnected(SDL_AudioDevice *device);
 
 typedef struct SDL_AudioDriverImpl
 {
+    char *(*GetDefault) (void);
     void (*DetectDevices) (void);
     int (*OpenDevice) (_THIS, void *handle, const char *devname, int iscapture);
     void (*ThreadInit) (_THIS); /* Called by audio thread at start */
