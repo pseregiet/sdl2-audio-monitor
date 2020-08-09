@@ -743,6 +743,7 @@ PULSEAUDIO_DetectDevices()
     WaitForPulseOperation(hotplug_mainloop, PULSEAUDIO_pa_context_get_source_info_list(hotplug_context, SourceInfoCallback, NULL));
     /* ok, we have a sane list, let's set up hotplug notifications now... */
     hotplug_thread = SDL_CreateThreadInternal(HotplugThread, "PulseHotplug", 256 * 1024, NULL);
+    free(default_sink);
 }
 
 static void
